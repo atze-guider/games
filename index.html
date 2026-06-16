@@ -1,0 +1,696 @@
+<!DOCTYPE html>
+<html lang="ko">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
+    <title>1945 Retro Air Combat - AI Edition</title>
+    <script src="https://cdn.tailwindcss.com"></script>
+    <style>
+        body {
+            margin: 0;
+            padding: 0;
+            background-color: #0d1117;
+            color: #fff;
+            font-family: 'Courier New', Courier, monospace;
+            overflow: hidden;
+            user-select: none;
+            -webkit-user-select: none;
+        }
+        canvas {
+            display: block;
+            margin: 0 auto;
+            box-shadow: 0 0 20px rgba(0, 0, 0, 0.8);
+            background: #111;
+        }
+        /* 폰트 스타일 */
+        .retro-text {
+            text-shadow: 2px 2px 0px #000;
+        }
+        /* 로딩 스피너 애니메이션 */
+        .spinner {
+            border: 4px solid rgba(255, 255, 255, 0.1);
+            width: 36px;
+            height: 36px;
+            border-radius: 50%;
+            border-left-color: #f59e0b;
+            animation: spin 1s linear infinite;
+        }
+        @keyframes spin {
+            0% { transform: rotate(0deg); }
+            100% { transform: rotate(360deg); }
+        }
+    </style>
+</head>
+<body class="flex flex-col items-center justify-center min-h-screen p-2">
+
+    <!-- 게임 컨테이너 -->
+    <div id="game-container" class="relative w-full max-w-[450px] aspect-[9/16] bg-black rounded-lg overflow-hidden border-4 border-gray-700 flex flex-col justify-between">
+        
+        <!-- UI 상단 바 -->
+        <div class="absolute top-0 left-0 w-full p-3 flex justify-between items-center z-10 pointer-events-none">
+            <!-- 목숨 (하트) -->
+            <div class="flex items-center space-x-1" id="lives-container">
+                <!-- 하트 아이콘이 동적으로 생성됨 -->
+            </div>
+            <!-- 점수 및 스테이지 -->
+            <div class="text-right">
+                <div class="text-xs text-gray-400 retro-text">STAGE <span id="ui-stage" class="text-yellow-400 font-bold text-sm">1</span></div>
+                <div class="text-sm font-bold text-white retro-text"><span id="ui-score">000000</span></div>
+            </div>
+        </div>
+
+        <!-- 캔버스 (게임 화면) -->
+        <canvas id="gameCanvas" class="w-full h-full"></canvas>
+
+        <!-- 모바일 터치 컨트롤 안내 및 폭탄 버튼 -->
+        <div class="absolute bottom-4 left-0 w-full px-4 flex justify-between items-center z-10 pointer-events-none">
+            <div class="bg-black/50 px-2 py-1 rounded text-[10px] text-gray-300 pointer-events-none retro-text">
+                [이동] 방향키 / 드래그
+            </div>
+            <button id="btn-bomb" class="w-14 h-14 bg-red-600 active:bg-red-800 rounded-full border-4 border-white text-white font-bold text-xs flex items-center justify-center shadow-lg pointer-events-auto cursor-pointer focus:outline-none">
+                BOMB
+            </button>
+        </div>
+
+        <!-- 시작 / 오버레이 화면 -->
+        <div id="overlay" class="absolute inset-0 bg-black/85 flex flex-col items-center justify-center p-6 text-center z-20">
+            <div class="mb-2 text-red-500 font-bold tracking-widest text-4xl retro-text animate-pulse">1945 AI</div>
+            <div class="mb-4 text-white text-lg tracking-wider font-semibold retro-text">RETRO STRIKER</div>
+            
+            <p class="text-xs text-gray-400 max-w-xs mb-6 leading-relaxed">
+                인류를 위협하는 적 비행단을 격파하세요!<br>
+                Gemini AI를 이용해 나만의 맞춤 전투기를 설계할 수 있습니다.
+            </p>
+
+            <!-- ✨ AI 전술 세팅 구역 -->
+            <div class="w-full bg-gray-900/90 border border-yellow-500/50 rounded-lg p-3 mb-6 text-left">
+                <div class="text-xs text-yellow-400 font-bold mb-2 flex items-center">
+                    ✨ AI 전투기 특성 커스텀 디자인
+                </div>
+                <input id="ai-concept-input" type="text" placeholder="예: 초고속 기동 스텔스기, 분홍색 하트 레이저포..." 
+                       class="w-full bg-black text-white text-xs border border-gray-700 rounded px-2.5 py-2 mb-2 focus:outline-none focus:border-yellow-500">
+                <button id="btn-ai-generate-start" class="w-full py-1.5 bg-indigo-600 hover:bg-indigo-500 text-white font-bold text-xs rounded transition flex items-center justify-center space-x-1 cursor-pointer">
+                    <span>✨ AI 개조 적용하기</span>
+                </button>
+                
+                <!-- AI 적용 상태 창 -->
+                <div id="ai-status-box" class="mt-2 text-[10px] text-gray-400 bg-black/60 p-2 rounded border border-gray-800 hidden">
+                    <div class="font-bold text-green-400" id="ai-status-title">튜닝 완료!</div>
+                    <div id="ai-status-desc">속도 및 무기 개조 세팅 완료.</div>
+                </div>
+            </div>
+
+            <div class="space-y-4 w-full max-w-xs">
+                <button id="btn-start" class="w-full py-3 bg-yellow-500 hover:bg-yellow-400 text-black font-bold text-lg rounded-md border-b-4 border-yellow-700 transition active:translate-y-1 active:border-b-0 cursor-pointer">
+                    출격 시작
+                </button>
+            </div>
+        </div>
+
+        <!-- ✨ AI 격납고(중간 보급) 오버레이 -->
+        <div id="ai-hangar-overlay" class="absolute inset-0 bg-black/95 flex flex-col items-center justify-center p-6 text-center z-25 hidden">
+            <div class="text-yellow-400 font-bold text-2xl retro-text tracking-wider mb-2">✨ AI 전술 격납고</div>
+            <p class="text-xs text-gray-400 mb-6">스테이지 클리어 완료! 전투기를 AI로 급속 개조합니다.</p>
+
+            <div class="w-full bg-gray-900 border border-indigo-500/40 rounded-lg p-4 text-left space-y-4 mb-6">
+                <div>
+                    <label class="text-xs text-indigo-300 block mb-1">원하는 전술 업그레이드를 입력하세요:</label>
+                    <input id="ai-hangar-input" type="text" placeholder="예: 전멸 폭탄 보급, 극초고속 엔진 충전..." 
+                           class="w-full bg-black text-white text-xs border border-gray-700 rounded px-3 py-2.5 focus:outline-none focus:border-indigo-400">
+                </div>
+
+                <div class="flex space-x-2">
+                    <button id="btn-ai-hangar-apply" class="flex-1 py-2 bg-indigo-600 hover:bg-indigo-500 text-white font-bold text-xs rounded transition cursor-pointer">
+                        ✨ 개조 요청하기
+                    </button>
+                    <button id="btn-ai-hangar-skip" class="px-4 py-2 bg-gray-800 hover:bg-gray-700 text-gray-300 text-xs rounded transition cursor-pointer">
+                        패스하고 다음 스테이지로
+                    </button>
+                </div>
+
+                <!-- 로딩 중 상태 표시 -->
+                <div id="ai-loading-indicator" class="hidden flex flex-col items-center justify-center py-2 space-y-2">
+                    <div class="spinner"></div>
+                    <span class="text-[11px] text-yellow-400">기술 부서에서 개조 도면을 작성하는 중...</span>
+                </div>
+
+                <!-- AI 응답 무전 피드백 -->
+                <div id="ai-radio-feedback" class="bg-black border border-gray-800 p-3 rounded hidden">
+                    <div class="text-[10px] text-green-400 font-bold mb-1">📻 기술장교 무전 통신:</div>
+                    <div id="ai-radio-message" class="text-xs text-gray-300 italic">"성공적으로 개조를 완수했습니다!"</div>
+                    <div id="ai-radio-stats" class="text-[10px] text-indigo-400 mt-2 grid grid-cols-2 gap-1">
+                        <!-- 동적 갱신 -->
+                    </div>
+                </div>
+            </div>
+            
+            <button id="btn-hangar-next" class="w-full max-w-xs py-3 bg-yellow-500 hover:bg-yellow-400 text-black font-bold text-sm rounded transition hidden cursor-pointer">
+                조율 완료! 전장으로 복귀
+            </button>
+        </div>
+
+        <!-- 게임 오버 / 클리어 화면 -->
+        <div id="game-over-overlay" class="absolute inset-0 bg-black/90 flex flex-col items-center justify-center p-6 text-center z-20 hidden">
+            <div id="game-status-title" class="mb-2 text-red-600 font-bold text-3xl retro-text">GAME OVER</div>
+            <div class="text-gray-400 text-sm mb-6 retro-text">최종 결과</div>
+
+            <div class="bg-gray-900/80 p-4 rounded-lg border border-gray-800 w-full max-w-xs mb-8 space-y-2">
+                <div class="flex justify-between text-xs text-gray-400">
+                    <span>도달 스테이지</span>
+                    <span id="final-stage" class="text-yellow-400 font-bold">1</span>
+                </div>
+                <div class="flex justify-between text-xs text-gray-400">
+                    <span>최종 점수</span>
+                    <span id="final-score" class="text-white font-bold">0</span>
+                </div>
+                <div class="flex justify-between text-xs text-gray-400">
+                    <span>격추한 적군 수</span>
+                    <span id="final-kills" class="text-red-400 font-bold">0</span>
+                </div>
+            </div>
+
+            <button id="btn-restart" class="w-full max-w-xs py-3 bg-red-600 hover:bg-red-500 text-white font-bold text-lg rounded-md border-b-4 border-red-800 transition active:translate-y-1 active:border-b-0 cursor-pointer">
+                다시 도전하기
+            </button>
+        </div>
+
+        <!-- 스테이지 클리어 안내 (일시적) -->
+        <div id="stage-clear-overlay" class="absolute inset-0 bg-black/60 flex flex-col items-center justify-center p-6 text-center z-15 hidden pointer-events-none">
+            <div class="text-yellow-400 font-bold text-4xl retro-text tracking-widest mb-2 animate-bounce">STAGE CLEAR</div>
+            <div id="next-stage-desc" class="text-white text-sm retro-text">다음 스테이지 진입 중...</div>
+        </div>
+
+        <!-- 오류 메시지 알림 모달 UI -->
+        <div id="alert-modal" class="absolute inset-x-4 top-1/3 bg-gray-900 border-2 border-red-500 rounded-lg p-4 text-center z-30 hidden shadow-2xl">
+            <div class="text-red-500 font-bold text-sm mb-2">⚠️ 오류 발생</div>
+            <div id="alert-modal-text" class="text-xs text-gray-300 mb-4">API 처리 중 문제가 발생했습니다.</div>
+            <button id="btn-alert-close" class="px-4 py-1.5 bg-red-600 hover:bg-red-500 text-white text-xs rounded font-bold cursor-pointer">확인</button>
+        </div>
+    </div>
+
+    <script>
+        // --- Gemini API 통신 코드 & 지수 백오프 제어 ---
+        const apiKey = ""; // API Key (런타임 환경에서 주입)
+
+        async function callGemini(userInput, systemPrompt, responseSchema) {
+            let delay = 1000;
+            const maxRetries = 5;
+
+            const payload = {
+                contents: [{ parts: [{ text: userInput }] }],
+                systemInstruction: { parts: [{ text: systemPrompt }] },
+                generationConfig: {
+                    responseMimeType: "application/json",
+                    responseSchema: responseSchema
+                }
+            };
+
+            for (let i = 0; i < maxRetries; i++) {
+                try {
+                    const response = await fetch(`https://generativelanguage.googleapis.com/v1beta/models/gemini-2.5-flash-preview-09-2025:generateContent?key=${apiKey}`, {
+                        method: 'POST',
+                        headers: {
+                            'Content-Type': 'application/json'
+                        },
+                        body: JSON.stringify(payload)
+                    });
+
+                    if (response.ok) {
+                        const json = await response.json();
+                        const textResult = json.candidates?.[0]?.content?.parts?.[0]?.text;
+                        if (textResult) {
+                            return JSON.parse(textResult);
+                        }
+                    }
+                } catch (e) {
+                    // 예외가 발생하더라도 사용자 경험을 해치지 않기 위해 콘솔 로그를 남기지 않습니다.
+                }
+                
+                // 지수 백오프 대기 시간 (1s, 2s, 4s, 8s, 16s)
+                await new Promise(resolve => setTimeout(resolve, delay));
+                delay *= 2;
+            }
+            throw new Error("Gemini API 호출에 실패했습니다.");
+        }
+
+        // 경고 모달 제어 함수
+        function showCustomAlert(message) {
+            const modal = document.getElementById('alert-modal');
+            document.getElementById('alert-modal-text').textContent = message;
+            modal.classList.remove('hidden');
+        }
+        document.getElementById('btn-alert-close').addEventListener('click', () => {
+            document.getElementById('alert-modal').classList.add('hidden');
+        });
+
+
+        // --- Web Audio API 사운드 제네레이터 (무료 및 저작권 없는 레트로 사운드 트랙) ---
+        class RetroAudio {
+            constructor() {
+                this.ctx = null;
+                this.bgmInterval = null;
+                this.isMuted = false;
+                this.tempo = 140; // BPM
+                this.beatDuration = 60 / this.tempo;
+                
+                // 1945에 어울리는 흥겨운 레트로 행진곡 풍 멜로디 (C 마이너 / 메이저 코드 진행)
+                this.melody = [
+                    { note: "C4", dur: 1 }, { note: "D4", dur: 1 }, { note: "Eb4", dur: 1 }, { note: "G4", dur: 1 },
+                    { note: "F4", dur: 1 }, { note: "Eb4", dur: 1 }, { note: "D4", dur: 1 }, { note: "G3", dur: 1 },
+                    { note: "C4", dur: 1 }, { note: "C4", dur: 0.5 }, { note: "D4", dur: 0.5 }, { note: "Eb4", dur: 1 }, { note: "C4", dur: 1 },
+                    { note: "Ab4", dur: 1.5 }, { note: "G4", dur: 0.5 }, { note: "F4", dur: 1 }, { note: "G4", dur: 1 }
+                ];
+                
+                this.bass = [
+                    "C2", "C2", "Eb2", "Eb2", "F2", "F2", "G2", "G2",
+                    "C2", "C2", "Eb2", "Eb2", "Ab2", "Bb2", "C3", "G2"
+                ];
+
+                this.noteFreqs = {
+                    "C2": 65.41, "Eb2": 73.42, "F2": 87.31, "G2": 98.00, "Ab2": 103.83, "Bb2": 116.54, "C3": 130.81,
+                    "G3": 196.00, "C4": 261.63, "D4": 293.66, "Eb4": 311.13, "F4": 349.23, "G4": 392.00, "Ab4": 415.30
+                };
+            }
+
+            init() {
+                if (!this.ctx) {
+                    this.ctx = new (window.AudioContext || window.webkitAudioContext)();
+                }
+            }
+
+            // 단순 음 생성 함수
+            playTone(freq, type, duration, volume, slideTo = null) {
+                if (!this.ctx || this.isMuted) return;
+                
+                try {
+                    let osc = this.ctx.createOscillator();
+                    let gain = this.ctx.createGain();
+                    
+                    osc.type = type;
+                    osc.frequency.setValueAtTime(freq, this.ctx.currentTime);
+                    
+                    if (slideTo) {
+                        osc.frequency.exponentialRampToValueAtTime(slideTo, this.ctx.currentTime + duration);
+                    }
+                    
+                    gain.gain.setValueAtTime(volume, this.ctx.currentTime);
+                    gain.gain.exponentialRampToValueAtTime(0.001, this.ctx.currentTime + duration);
+                    
+                    osc.connect(gain);
+                    gain.connect(this.ctx.destination);
+                    
+                    osc.start();
+                    osc.stop(this.ctx.currentTime + duration);
+                } catch (e) {
+                    // 예외 흐름 무시
+                }
+            }
+
+            // 효과음 재생
+            playLaser() {
+                this.init();
+                this.playTone(880, 'square', 0.15, 0.05, 110);
+            }
+
+            playExplosion() {
+                this.init();
+                this.playTone(150, 'sawtooth', 0.4, 0.15, 10);
+            }
+
+            playItem() {
+                this.init();
+                this.playTone(330, 'sine', 0.1, 0.1, 660);
+                setTimeout(() => this.playTone(660, 'sine', 0.2, 0.1, 1200), 100);
+            }
+
+            playHurt() {
+                this.init();
+                this.playTone(200, 'triangle', 0.3, 0.2, 50);
+            }
+
+            playBomb() {
+                this.init();
+                this.playTone(400, 'sawtooth', 0.8, 0.25, 40);
+            }
+
+            playStageClear() {
+                this.init();
+                const notes = [261.63, 329.63, 392.00, 523.25];
+                notes.forEach((f, i) => {
+                    setTimeout(() => {
+                        this.playTone(f, 'triangle', 0.2, 0.1);
+                    }, i * 150);
+                });
+            }
+
+            // 배경 음악 루프 플레이어
+            startBGM() {
+                this.init();
+                if (this.bgmInterval) return;
+
+                let beatCount = 0;
+                let bassIndex = 0;
+                let melodyIndex = 0;
+                let melodyTimer = 0;
+
+                this.bgmInterval = setInterval(() => {
+                    if (this.isMuted) return;
+
+                    // 1. 베이스 재생 (매 비트마다)
+                    const bassNote = this.bass[bassIndex];
+                    const bassFreq = this.noteFreqs[bassNote];
+                    if (bassFreq) {
+                        this.playTone(bassFreq, 'sawtooth', this.beatDuration * 0.9, 0.02);
+                    }
+                    bassIndex = (bassIndex + 1) % this.bass.length;
+
+                    // 2. 멜로디 재생
+                    if (melodyTimer <= 0) {
+                        const m = this.melody[melodyIndex];
+                        const melodyFreq = this.noteFreqs[m.note];
+                        if (melodyFreq) {
+                            this.playTone(melodyFreq, 'triangle', this.beatDuration * m.dur * 0.8, 0.03);
+                        }
+                        melodyTimer = m.dur;
+                        melodyIndex = (melodyIndex + 1) % this.melody.length;
+                    }
+
+                    melodyTimer -= 0.5; // 0.5 박자 차감
+                    beatCount++;
+                }, this.beatDuration * 500); // 0.5 박자 간격으로 업데이트
+            }
+
+            stopBGM() {
+                if (this.bgmInterval) {
+                    clearInterval(this.bgmInterval);
+                    this.bgmInterval = null;
+                }
+            }
+        }
+
+        const audio = new RetroAudio();
+
+
+        // --- Canvas 및 게임 메인 로직 ---
+        const canvas = document.getElementById('gameCanvas');
+        const ctx = canvas.getContext('2d');
+
+        // 해상도 조절
+        function resizeCanvas() {
+            canvas.width = 450;
+            canvas.height = 800;
+        }
+        resizeCanvas();
+
+        // 게임 상태 상수들
+        const GAME_STATE = {
+            START: 'start',
+            PLAYING: 'playing',
+            CLEARING: 'clearing',
+            HANGAR: 'hangar',
+            GAMEOVER: 'gameover'
+        };
+
+        let state = GAME_STATE.START;
+        let score = 0;
+        let stage = 1;
+        let isNight = false; // 낮(false), 밤(true) 번갈아 변경
+        let lives = 3;
+        let maxLives = 5;
+        let kills = 0;
+        let bombs = 1;
+
+        // 조작키 상태
+        const keys = {};
+
+        // 터치/마우스 드래그 조작용 변수
+        let isDragging = false;
+        let dragOffset = { x: 0, y: 0 };
+
+        // 플레이어 캐릭터 객체 (AI 커스텀 컬러 수용 가능한 구조)
+        const player = {
+            x: canvas.width / 2,
+            y: canvas.height - 100,
+            width: 44,
+            height: 44,
+            speed: 5.5,
+            bulletLevel: 1, // 1~3 단계 총알
+            lastShotTime: 0,
+            shootInterval: 220, // 총알 발사 속도 (ms)
+            invulnFrames: 0, // 피격 후 무적 프레임
+            primaryColor: '#9ca3af', // 기본 은회색 주날개
+            secondaryColor: '#fbbf24', // 기본 노란색 데칼 포인트
+            tailColor: '#ef4444',
+            draw(ctx) {
+                ctx.save();
+                // 무적 프레임 깜빡임 효과
+                if (this.invulnFrames > 0 && Math.floor(this.invulnFrames / 4) % 2 === 0) {
+                    ctx.globalAlpha = 0.3;
+                }
+
+                // 레트로 전투기 수제 드로잉 (1945 전투기 스타일)
+                // 1. 날개
+                ctx.fillStyle = this.primaryColor; 
+                ctx.beginPath();
+                ctx.moveTo(this.x - this.width/2, this.y + 5);
+                ctx.lineTo(this.x + this.width/2, this.y + 5);
+                ctx.lineTo(this.x + this.width/6, this.y - 5);
+                ctx.lineTo(this.x - this.width/6, this.y - 5);
+                ctx.closePath();
+                ctx.fill();
+
+                // 날개 커스텀 포인트 데칼
+                ctx.fillStyle = this.secondaryColor;
+                ctx.fillRect(this.x - this.width/2 + 2, this.y + 1, 6, 4);
+                ctx.fillRect(this.x + this.width/2 - 8, this.y + 1, 6, 4);
+
+                // 2. 동체 (몸통)
+                ctx.fillStyle = '#6b7280';
+                ctx.fillRect(this.x - 7, this.y - this.height/2, 14, this.height);
+
+                // 3. 엔진 및 꼬리날개
+                ctx.fillStyle = this.tailColor; // 커스텀 꼬리색상 적용 가능
+                ctx.beginPath();
+                ctx.moveTo(this.x - 12, this.y + this.height/2);
+                ctx.lineTo(this.x + 12, this.y + this.height/2);
+                ctx.lineTo(this.x, this.y + this.height/2 - 8);
+                ctx.closePath();
+                ctx.fill();
+
+                // 4. 조종석 (캐노피)
+                ctx.fillStyle = '#38bdf8'; // 투명한 하늘색 유리창
+                ctx.beginPath();
+                ctx.arc(this.x, this.y - 6, 5, 0, Math.PI * 2);
+                ctx.fill();
+
+                // 5. 프로펠러 회전 잔상 효과
+                ctx.strokeStyle = 'rgba(255, 255, 255, 0.4)';
+                ctx.lineWidth = 1;
+                ctx.beginPath();
+                ctx.arc(this.x, this.y - this.height/2 - 2, 12, 0, Math.PI, true);
+                ctx.stroke();
+
+                ctx.restore();
+            }
+        };
+
+        // 엔티티 목록
+        let bullets = [];
+        let enemyBullets = [];
+        let enemies = [];
+        let items = [];
+        let particles = [];
+        let clouds = []; // 배경 오브젝트 (구름 / 별)
+
+        // 적 스폰 매니저
+        let lastEnemySpawn = 0;
+        let enemySpawnInterval = 1800; // 난이도에 따라 점차 감소
+
+        // 구름 / 별 생성 함수 (배경 연출)
+        function generateClouds() {
+            clouds = [];
+            const count = isNight ? 80 : 10;
+            for (let i = 0; i < count; i++) {
+                clouds.push({
+                    x: Math.random() * canvas.width,
+                    y: Math.random() * canvas.height,
+                    size: isNight ? (Math.random() * 2 + 1) : (Math.random() * 40 + 30),
+                    speed: isNight ? (Math.random() * 0.5 + 0.2) : (Math.random() * 1 + 0.5),
+                    opacity: isNight ? Math.random() * 0.8 + 0.2 : Math.random() * 0.15 + 0.05
+                });
+            }
+        }
+
+        // 아이템 클래스
+        class GameItem {
+            constructor(x, y) {
+                this.x = x;
+                this.y = y;
+                this.width = 24;
+                this.height = 24;
+                this.speedY = 1.5;
+                this.speedX = (Math.random() - 0.5) * 1;
+                // 아이템 종류 결정: P(파워업: 50%), H(체력: 25%), B(폭탄: 25%)
+                const rand = Math.random();
+                if (rand < 0.5) {
+                    this.type = 'P'; // Power Up
+                    this.color = '#fbbf24'; // 노란색
+                } else if (rand < 0.75) {
+                    this.type = 'H'; // Heal Life
+                    this.color = '#ec4899'; // 분홍색
+                } else {
+                    this.type = 'B'; // Bomb Item
+                    this.color = '#ef4444'; // 적색
+                }
+            }
+
+            update() {
+                this.y += this.speedY;
+                this.x += this.speedX;
+                // 벽 튕기기
+                if (this.x - this.width/2 < 0 || this.x + this.width/2 > canvas.width) {
+                    this.speedX *= -1;
+                }
+            }
+
+            draw(ctx) {
+                ctx.save();
+                // 둥근 아이템 사각형 그리기
+                ctx.fillStyle = this.color;
+                ctx.shadowColor = this.color;
+                ctx.shadowBlur = 10;
+                ctx.beginPath();
+                ctx.arc(this.x, this.y, 12, 0, Math.PI * 2);
+                ctx.fill();
+
+                // 테두리
+                ctx.strokeStyle = '#ffffff';
+                ctx.lineWidth = 1.5;
+                ctx.stroke();
+
+                // 아이템 텍스트
+                ctx.shadowBlur = 0;
+                ctx.fillStyle = '#ffffff';
+                ctx.font = 'bold 11px Arial';
+                ctx.textAlign = 'center';
+                ctx.textBaseline = 'middle';
+                ctx.fillText(this.type, this.x, this.y);
+                ctx.restore();
+            }
+        }
+
+        // 아군 총알 클래스
+        class Bullet {
+            constructor(x, y, angle = 0, speed = 10) {
+                this.x = x;
+                this.y = y;
+                this.speed = speed;
+                this.angle = angle;
+                this.width = 6;
+                this.height = 14;
+            }
+
+            update() {
+                this.x += Math.sin(this.angle) * this.speed;
+                this.y -= Math.cos(this.angle) * this.speed;
+            }
+
+            draw(ctx) {
+                ctx.save();
+                ctx.translate(this.x, this.y);
+                ctx.rotate(this.angle);
+                
+                // 불꽃 레이저 탄환 형태 (플레이어의 보조 데칼 색상을 머금음)
+                ctx.fillStyle = player.secondaryColor;
+                ctx.shadowColor = player.primaryColor;
+                ctx.shadowBlur = 6;
+                ctx.fillRect(-this.width/2, -this.height/2, this.width, this.height);
+                
+                // 안쪽 밝은 중심선
+                ctx.fillStyle = '#fff';
+                ctx.fillRect(-this.width/4, -this.height/2 + 2, this.width/2, this.height - 4);
+                
+                ctx.restore();
+            }
+        }
+
+        // 적 전투기 기본 클래스
+        class Enemy {
+            constructor(type, stageMultiplier) {
+                this.x = Math.random() * (canvas.width - 60) + 30;
+                this.y = -40;
+                this.type = type; // 'scout', 'fighter', 'bomber'
+                
+                // 스테이지별 배율 적용
+                const hpFactor = 1 + (stageMultiplier - 1) * 0.4;
+                const speedFactor = Math.min(1 + (stageMultiplier - 1) * 0.15, 2.5);
+
+                if (type === 'scout') {
+                    this.width = 30;
+                    this.height = 30;
+                    this.speedY = (Math.random() * 1.5 + 2) * speedFactor;
+                    this.speedX = (Math.random() - 0.5) * 1.5;
+                    this.hp = Math.round(1 * hpFactor);
+                    this.points = 100;
+                    this.shootChance = 0.005 + (stage * 0.002);
+                } else if (type === 'fighter') {
+                    this.width = 44;
+                    this.height = 44;
+                    this.speedY = (Math.random() * 1 + 1.5) * speedFactor;
+                    this.speedX = (Math.random() - 0.5) * 0.8;
+                    this.hp = Math.round(3 * hpFactor);
+                    this.points = 250;
+                    this.shootChance = 0.012 + (stage * 0.003);
+                } else { // 'bomber' 중형 폭격기
+                    this.width = 64;
+                    this.height = 54;
+                    this.speedY = 0.8 * speedFactor;
+                    this.speedX = (Math.random() - 0.5) * 0.4;
+                    this.hp = Math.round(8 * hpFactor);
+                    this.points = 600;
+                    this.shootChance = 0.02 + (stage * 0.004);
+                }
+            }
+
+            update() {
+                this.y += this.speedY;
+                this.x += this.speedX;
+
+                // 화면 좌우 이탈 시 튕김
+                if (this.x - this.width/2 < 0 || this.x + this.width/2 > canvas.width) {
+                    this.speedX *= -1;
+                }
+
+                // 무작위 패턴 사격
+                if (this.y > 50 && this.y < canvas.height - 150) {
+                    if (Math.random() < this.shootChance) {
+                        this.shoot();
+                    }
+                }
+            }
+
+            shoot() {
+                if (this.type === 'scout') {
+                    // 일직선 단발 탄환
+                    enemyBullets.push(new EnemyBullet(this.x, this.y + this.height/2, 0, 4.5));
+                } else if (this.type === 'fighter') {
+                    // 플레이어 조준 탄환
+                    const angle = Math.atan2(player.x - this.x, player.y - this.y);
+                    enemyBullets.push(new EnemyBullet(this.x, this.y + this.height/2, angle, 5));
+                } else if (this.type === 'bomber') {
+                    // 3방향 확산탄
+                    enemyBullets.push(new EnemyBullet(this.x, this.y + this.height/2, -0.3, 4));
+                    enemyBullets.push(new EnemyBullet(this.x, this.y + this.height/2, 0, 4));
+                    enemyBullets.push(new EnemyBullet(this.x, this.y + this.height/2, 0.3, 4));
+                }
+            }
+
+            draw(ctx) {
+                ctx.save();
+                
+                // 적 비행기 종류별 드로잉
+                if (this.type === 'scout') {
+                    // 정찰기: 날렵한 삼각 디자인 (연두색 계열)
+                    ctx.fillStyle = '#10b981';
+                    ctx.beginPath();
+                    ctx.moveTo(this
